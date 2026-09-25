@@ -15,6 +15,12 @@ class PageResult(BaseModel, Generic[T]):
     size: int = 20
 
 
+class DefectPageResult(PageResult[dict]):
+    """缺陷登记分页结果：附带随当前列表实时重算的统计卡片。"""
+
+    stats: dict[str, int] = Field(default_factory=dict)
+
+
 class ActionResult(BaseModel):
     ok: bool
     message: str
