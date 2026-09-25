@@ -73,10 +73,14 @@ const ENDPOINT = '/api/defect'
 const columns = ["缺陷编号", "所属设备", "缺陷类型", "严重等级", "发现时间", "发现人", "处理期限", "缺陷状态"]
 const actions = ["确认定级", "提交闭环", "挂起缺陷"]
 const statuses = ["待定级", "已定级", "处理中", "已闭环", "已挂起"]
-const stats = [{"label": "待定级缺陷", "value": 0}, {"label": "处理中缺陷", "value": 0}, {"label": "超期未闭环", "value": 0}]
 
 const rows = ref<Row[]>([])
 const total = ref(0)
+const stats = ref([
+  { label: '待定级缺陷', value: 0 },
+  { label: '处理中缺陷', value: 0 },
+  { label: '超期未闭环', value: 0 },
+])
 const errorMessage = ref('')
 const filters = ref<Record<string, string>>({})
 const filterFields = columns.slice(0, 3)
@@ -96,13 +100,23 @@ function openCreate() {
 
 async function runAction(action: string, row: Row) {
   errorMessage.value = ''
+  const values: Record<string, string> = { action }
+  if (action === '确认定级') {
+    const severity = window.prompt('确认严重等级（危急/严重/一般）', String(row['严重等级'] ?? ''))
+    if (severity === null) {
+      return
+    }
+    values['缺陷类型'] = String(row['缺陷类型'] ?? '')
+    values['严重等级'] = severity.trim()
+  }
   try {
     const response = await request(`${ENDPOINT}/${row.id}/actions`, {
       method: 'POST',
-      body: JSON.stringify({ action }),
+      body: JSON.stringify({ values }),
     })
-    if (!response.ok) {
-      throw new Error('缺陷登记动作未生效，请稍后重试')
+    const payload = await response.json()
+    if (!response.ok || !payload.ok) {
+      throw new Error(payload.message ?? payload.detail ?? '缺陷登记动作未生效，请稍后重试')
     }
     await reload()
   } catch (error) {
@@ -114,13 +128,20 @@ async function reload() {
   errorMessage.value = ''
   const query = new URLSearchParams(filters.value as Record<string, string>).toString()
   try {
-    const response = await request(`${ENDPOINT}?${query}`)
-    if (!response.ok) {
+    const [listResponse, statsResponse] = await Promise.all([
+      request(`${ENDPOINT}?${query}`),
+      request(`${ENDPOINT}/stats`),
+    ])
+    if (!listResponse.ok) {
       throw new Error('设备缺陷列表读取失败')
     }
-    const payload = await response.json()
+    const payload = await listResponse.json()
     rows.value = payload.items ?? []
     total.value = payload.total ?? rows.value.length
+    if (statsResponse.ok) {
+      const statsPayload = await statsResponse.json()
+      stats.value = statsPayload.items ?? stats.value
+    }
   } catch (error) {
     errorMessage.value = error instanceof Error ? error.message : '缺陷登记列表读取失败'
   }
